@@ -22,31 +22,65 @@
 #include <stdio.h>
 #include <string.h>
 
+// ***
+#define MAX_ENCODER_VALUE 128
+#define MIN_ENCODER_VALUE 0
+
+const int ENCODER_PIN_BUTTON = 8;
+const int ENCODER_PIN_DT = 3;
+const int ENCODER_PIN_CLK = 2;
+
+// **** OLED CONFIG ****
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+
+// **** VARIABLES ****
+int counter = 0;
+volatile int lastEncoded = 0;
+volatile long encoderValue = 0;
+long lastencoderValue = 0;
+int lastMSB = 0;
+int lastLSB = 0;
+
+/*********
+ * SETUP *
+ *********/
+
 void setup() {
   Serial.begin(9600);
+
+  // ENCODER SETUP
+  pinMode(ENCODER_PIN_DT, INPUT_PULLUP);
+  pinMode(ENCODER_PIN_CLK, INPUT_PULLUP);
+  pinMode(ENCODER_PIN_BUTTON, INPUT_PULLUP);
+
+  attachInterrupt(0, updateEncoder, CHANGE);
+  attachInterrupt(1, updateEncoder, CHANGE);
+
+  // SCREEN SETUP
   init_screen();
+
 }
 
+/**********
+ ** LOOP **
+ **********/
+
 void loop() {
-  for(int16_t i=0; i<128; i+=1) {
-    int value = i % 128;
-    
-    char incipit[] = "Porcitudine ";
-    char value_str[3];
-    sprintf(value_str, "%d", value);
-    //itoa(num, snum, 10);
-    strcat(incipit,value_str);
-    
-    show_value_bar("Porcitudine di Dio", value, 0);
+    int buttonValue = digitalRead(8);
+    Serial.println(encoderValue);
+
+    if (buttonValue == LOW){
+      // If button pushed, turn LED on
+      Serial.println("PRESS");
+      text_on_screen("PRESS", 3, 0, 0, 0);
     }
-  //two_lines_on_screen("dio", "cane", 0);
+    else{
+      show_value_bar("Porcitudine di Dio", encoderValue, 128, 0);
+    }
 }
 
 void init_screen(void){
@@ -56,14 +90,32 @@ void init_screen(void){
     for(;;); // Don't proceed, loop forever
   }
 
-    // Show initial display buffer contents on the screen --
+  // Show initial display buffer contents on the screen --
   // the library initializes this with an Adafruit splash screen.
   display.display();
   delay(1000); // Pause for 2 seconds
   
 }
+  
+void updateEncoder() {
+  int MSB = digitalRead(ENCODER_PIN_DT); //MSB = most significant bit
+  int LSB = digitalRead(ENCODER_PIN_CLK); //LSB = least significant bit
 
-void show_value_bar(char string[], int value, int delay_time){
+  int encoded = (MSB << 1) | LSB; //converting the 2 pin value to single number
+  int sum  = (lastEncoded << 2) | encoded; //adding it to the previous encoded value
+
+  //if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderValue ++;
+  //if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderValue --;
+  if (sum == 0b1000) encoderValue ++;
+  if (sum == 0b0010) encoderValue --;
+
+  if (encoderValue < MIN_ENCODER_VALUE) encoderValue = MIN_ENCODER_VALUE;
+  if (encoderValue > MAX_ENCODER_VALUE) encoderValue = MAX_ENCODER_VALUE;
+  
+  lastEncoded = encoded; //store this value for next time
+}
+
+void show_value_bar(char string[], int value, int max_value, int delay_time){
   display.clearDisplay();
 
   // FIRST LINE
@@ -101,7 +153,7 @@ void text_on_screen(char string[], int font_size, int delay_time, int x, int y) 
 
   display.setTextSize(font_size);      // Normal 1:1 pixel scale
   display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(x, y);     // Start at top-left corner
+  display.setCursor(x, y);             // Start at top-left corner
   
   //display.cp437(true);         // Use full 256 char 'Code Page 437' font
 
